@@ -1,4 +1,4 @@
-//LimelightHelpers v1.12 (REQUIRES LLOS 2025.0 OR LATER)
+//LimelightHelpers v1.13 (REQUIRES LLOS 2026.0 OR LATER)
 
 package frc.robot;
 
@@ -32,6 +32,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.ConcurrentHashMap;
+import edu.wpi.first.net.PortForwarder;
 
 /**
  * LimelightHelpers provides static methods and classes for interfacing with Limelight vision cameras in FRC.
@@ -506,6 +507,31 @@ public class LimelightHelpers {
     }
 
     /**
+     * Represents a Limelight Raw Target/Contour result from Limelight's NetworkTables output.
+     */
+    public static class RawTarget {
+        public double txnc = 0;
+        public double tync = 0;
+        public double ta = 0;
+
+        public RawTarget(double txnc, double tync, double ta) {
+            this.txnc = txnc;
+            this.tync = tync;
+            this.ta = ta;
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) return true;
+            if (obj == null || getClass() != obj.getClass()) return false;
+            RawTarget other = (RawTarget) obj;
+            return Double.compare(txnc, other.txnc) == 0 &&
+                Double.compare(tync, other.tync) == 0 &&
+                Double.compare(ta, other.ta) == 0;
+        }
+    }
+
+    /**
      * Represents a Limelight Raw Neural Detector result from Limelight's NetworkTables output.
      */
     public static class RawDetection {
@@ -542,7 +568,7 @@ public class LimelightHelpers {
             this.corner3_Y = corner3_Y;
         }
     }
-    
+
     /**
      * Represents a 3D Pose Estimate.
      */
@@ -849,6 +875,47 @@ public class LimelightHelpers {
         }
     
         return rawDetections;
+    }
+
+    /**
+     * Gets the raw target contours from NetworkTables.
+     * Returns ungrouped contours in normalized screen space (-1 to 1).
+     *
+     * @param limelightName Name/identifier of the Limelight
+     * @return Array of RawTarget objects containing up to 3 contours
+     */
+    public static RawTarget[] getRawTargets(String limelightName) {
+        var entry = LimelightHelpers.getLimelightNTTableEntry(limelightName, "rawtargets");
+        var rawTargetArray = entry.getDoubleArray(new double[0]);
+        int valsPerEntry = 3;
+        if (rawTargetArray.length % valsPerEntry != 0) {
+            return new RawTarget[0];
+        }
+
+        int numTargets = rawTargetArray.length / valsPerEntry;
+        RawTarget[] rawTargets = new RawTarget[numTargets];
+
+        for (int i = 0; i < numTargets; i++) {
+            int baseIndex = i * valsPerEntry;
+            double txnc = extractArrayEntry(rawTargetArray, baseIndex);
+            double tync = extractArrayEntry(rawTargetArray, baseIndex + 1);
+            double ta = extractArrayEntry(rawTargetArray, baseIndex + 2);
+
+            rawTargets[i] = new RawTarget(txnc, tync, ta);
+        }
+
+        return rawTargets;
+    }
+
+    /**
+     * Gets the corner coordinates of detected targets from NetworkTables.
+     * Requires "send contours" to be enabled in the Limelight Output tab.
+     *
+     * @param limelightName Name/identifier of the Limelight
+     * @return Array of doubles containing corner coordinates [x0, y0, x1, y1, ...]
+     */
+    public static double[] getCornerCoordinates(String limelightName) {
+        return getLimelightNTDoubleArray(limelightName, "tcornxy");
     }
 
     /**
@@ -1188,12 +1255,26 @@ public class LimelightHelpers {
         return getLimelightNTDoubleArray(limelightName, "targetpose_robotspace");
     }
 
+    /**
+     * Gets the average color under the crosshair region as a 3-element array.
+     * @param limelightName Name of the Limelight camera
+     * @return Array containing [Blue, Green, Red] color values (BGR order)
+     */
     public static double[] getTargetColor(String limelightName) {
         return getLimelightNTDoubleArray(limelightName, "tc");
     }
 
     public static double getFiducialID(String limelightName) {
         return getLimelightNTDouble(limelightName, "tid");
+    }
+
+    /**
+     * Gets the Limelight heartbeat value. Increments once per frame, allowing you to detect if the Limelight is connected and alive.
+     * @param limelightName Name of the Limelight camera
+     * @return Heartbeat value that increments each frame
+     */
+    public static double getHeartbeat(String limelightName) {
+        return getLimelightNTDouble(limelightName, "hb");
     }
 
     public static String getNeuralClassID(String limelightName) {
@@ -1453,7 +1534,20 @@ public class LimelightHelpers {
         entries[3] = cropYMax;
         setLimelightNTDoubleArray(limelightName, "crop", entries);
     }
-   
+
+    /**
+     * Sets the keystone modification for the crop window.
+     * @param limelightName Name of the Limelight camera
+     * @param horizontal Horizontal keystone value (-0.95 to 0.95)
+     * @param vertical Vertical keystone value (-0.95 to 0.95)
+     */
+    public static void setKeystone(String limelightName, double horizontal, double vertical) {
+        double[] entries = new double[2];
+        entries[0] = horizontal;
+        entries[1] = vertical;
+        setLimelightNTDoubleArray(limelightName, "keystone_set", entries);
+    }
+
     /**
      * Sets 3D offset point for easy 3D targeting.
      */
@@ -1640,6 +1734,39 @@ public class LimelightHelpers {
     /////
 
     /**
+     * Triggers a snapshot capture via NetworkTables by incrementing the snapshot counter.
+     * Rate-limited to once per 10 frames on the Limelight.
+     * @param limelightName Name of the Limelight camera
+     */
+    public static void triggerSnapshot(String limelightName) {
+        double current = getLimelightNTDouble(limelightName, "snapshot");
+        setLimelightNTDouble(limelightName, "snapshot", current + 1);
+    }
+
+    /**
+     * Enables or pauses the rewind buffer recording.
+     * @param limelightName Name of the Limelight camera
+     * @param enabled True to enable recording, false to pause
+     */
+    public static void setRewindEnabled(String limelightName, boolean enabled) {
+        setLimelightNTDouble(limelightName, "rewind_enable_set", enabled ? 1 : 0);
+    }
+
+    /**
+     * Triggers a rewind capture with the specified duration.
+     * Maximum duration is 165 seconds. Rate-limited on the Limelight.
+     * @param limelightName Name of the Limelight camera
+     * @param durationSeconds Duration of rewind capture in seconds (max 165)
+     */
+    public static void triggerRewindCapture(String limelightName, double durationSeconds) {
+        double counter = getLimelightNTDouble(limelightName, "capture_rewind");
+        double[] entries = new double[2];
+        entries[0] = counter + 1;
+        entries[1] = Math.min(durationSeconds, 165);
+        setLimelightNTDoubleArray(limelightName, "capture_rewind", entries);
+    }
+
+    /**
      * Asynchronously take snapshot.
      */
     public static CompletableFuture<Boolean> takeSnapshot(String tableName, String snapshotName) {
@@ -1696,5 +1823,28 @@ public class LimelightHelpers {
         }
 
         return results;
+    }
+
+    /**
+     * Sets up port forwarding for a Limelight 3A/3G connected via USB.
+     * This allows access to the Limelight web interface and video stream
+     * when connected to the robot over USB.
+     *
+     * For usbIndex 0: ports 5800-5809 forward to 172.29.0.1
+     * For usbIndex 1: ports 5810-5819 forward to 172.29.1.1
+     * etc.
+     *
+     * Call this method once during robot initialization.
+     * To access the interface of the camera with usbIndex0, you would go to roboRIO-(teamnum)-FRC.local:5801. Port 5811 for usb index 1
+     *
+     * @param usbIndex The USB index of the Limelight (0, 1, 2, etc.)
+     */
+    public static void setupPortForwardingUSB(int usbIndex) {
+        String ip = "172.29." + usbIndex + ".1";
+        int basePort = 5800 + (usbIndex * 10);
+
+        for (int i = 0; i < 9; i++) {
+            PortForwarder.add(basePort + i, ip, 5800 + i);
+        }
     }
 }
