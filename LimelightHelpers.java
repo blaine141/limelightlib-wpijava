@@ -17,13 +17,10 @@ import edu.wpi.first.math.util.Units;
 import edu.wpi.first.math.geometry.Rotation3d;
 import edu.wpi.first.math.geometry.Translation2d;
 
-import java.io.IOException;
-import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonFormat.Shape;
@@ -568,7 +565,7 @@ public class LimelightHelpers {
             this.corner3_Y = corner3_Y;
         }
     }
-
+    
     /**
      * Represents a 3D Pose Estimate.
      */
@@ -783,13 +780,15 @@ public class LimelightHelpers {
         // Convert server timestamp from microseconds to seconds and adjust for latency
         double adjustedTimestamp = (timestamp / 1000000.0) - (latency / 1000.0);
     
-        RawFiducial[] rawFiducials = new RawFiducial[tagCount];
         int valsPerFiducial = 7;
         int expectedTotalVals = 11 + valsPerFiducial * tagCount;
-    
+        RawFiducial[] rawFiducials;
+
         if (poseArray.length != expectedTotalVals) {
-            // Don't populate fiducials
+            // Array size mismatch - return empty array instead of null-filled array
+            rawFiducials = new RawFiducial[0];
         } else {
+            rawFiducials = new RawFiducial[tagCount];
             for(int i = 0; i < tagCount; i++) {
                 int baseIndex = 11 + (i * valsPerFiducial);
                 int id = (int)poseArray[baseIndex];
@@ -1112,7 +1111,7 @@ public class LimelightHelpers {
     double[] t2d = getT2DArray(limelightName);
       if(t2d.length == 17)
       {
-        return (int)t2d[10];
+        return (int)t2d[11];
       }
       return 0;
     }
@@ -1126,7 +1125,7 @@ public class LimelightHelpers {
      double[] t2d = getT2DArray(limelightName);
       if(t2d.length == 17)
       {
-        return (int)t2d[11];
+        return (int)t2d[10];
       }
       return 0;
     }
@@ -1632,25 +1631,6 @@ public class LimelightHelpers {
     }
 
     /**
-     * Sets the 3D point-of-interest offset for the current fiducial pipeline. 
-     * https://docs.limelightvision.io/docs/docs-limelight/pipeline-apriltag/apriltag-3d#point-of-interest-tracking
-     *
-     * @param limelightName Name/identifier of the Limelight
-     * @param x X offset in meters
-     * @param y Y offset in meters
-     * @param z Z offset in meters
-     */
-    public static void SetFidcuial3DOffset(String limelightName, double x, double y, 
-        double z) {
-
-        double[] entries = new double[3];
-        entries[0] = x;
-        entries[1] = y;
-        entries[2] = z;
-        setLimelightNTDoubleArray(limelightName, "fiducial_offset_set", entries);
-    }
-
-    /**
      * Overrides the valid AprilTag IDs that will be used for localization.
      * Tags not in this list will be ignored for robot pose estimation.
      *
@@ -1759,41 +1739,12 @@ public class LimelightHelpers {
      * @param durationSeconds Duration of rewind capture in seconds (max 165)
      */
     public static void triggerRewindCapture(String limelightName, double durationSeconds) {
-        double counter = getLimelightNTDouble(limelightName, "capture_rewind");
+        double[] currentArray = getLimelightNTDoubleArray(limelightName, "capture_rewind");
+        double counter = (currentArray.length > 0) ? currentArray[0] : 0;
         double[] entries = new double[2];
         entries[0] = counter + 1;
         entries[1] = Math.min(durationSeconds, 165);
         setLimelightNTDoubleArray(limelightName, "capture_rewind", entries);
-    }
-
-    /**
-     * Asynchronously take snapshot.
-     */
-    public static CompletableFuture<Boolean> takeSnapshot(String tableName, String snapshotName) {
-        return CompletableFuture.supplyAsync(() -> {
-            return SYNCH_TAKESNAPSHOT(tableName, snapshotName);
-        });
-    }
-
-    private static boolean SYNCH_TAKESNAPSHOT(String tableName, String snapshotName) {
-        URL url = getLimelightURLString(tableName, "capturesnapshot");
-        try {
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            if (snapshotName != null && !"".equals(snapshotName)) {
-                connection.setRequestProperty("snapname", snapshotName);
-            }
-
-            int responseCode = connection.getResponseCode();
-            if (responseCode == 200) {
-                return true;
-            } else {
-                System.err.println("Bad LL Request");
-            }
-        } catch (IOException e) {
-            System.err.println(e.getMessage());
-        }
-        return false;
     }
 
     /**
@@ -1843,7 +1794,7 @@ public class LimelightHelpers {
         String ip = "172.29." + usbIndex + ".1";
         int basePort = 5800 + (usbIndex * 10);
 
-        for (int i = 0; i < 9; i++) {
+        for (int i = 0; i < 10; i++) {
             PortForwarder.add(basePort + i, ip, 5800 + i);
         }
     }
