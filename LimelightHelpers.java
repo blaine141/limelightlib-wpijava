@@ -400,7 +400,7 @@ public class LimelightHelpers {
         public double robotYaw;
         public double roll;
         public double pitch;
-        public double yaw;
+        public double rawYaw;
         public double gyroZ;
         public double gyroX;
         public double gyroY;
@@ -418,7 +418,7 @@ public class LimelightHelpers {
                 robotYaw = data[0];
                 roll = data[1];
                 pitch = data[2];
-                yaw = data[3];
+                rawYaw = data[3];
                 gyroZ = data[4];
                 gyroX = data[5];
                 gyroY = data[6];
