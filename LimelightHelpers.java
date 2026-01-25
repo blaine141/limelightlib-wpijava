@@ -396,9 +396,36 @@ public class LimelightHelpers {
         @JsonProperty("yaw")
         public double yaw;
 
+        // Parsed from data array
+        public double robotYaw;
+        public double roll;
+        public double pitch;
+        public double yaw;
+        public double gyroZ;
+        public double gyroX;
+        public double gyroY;
+        public double accelZ;
+        public double accelX;
+        public double accelY;
+
         public IMUResults() {
             data = new double[0];
             quaternion = new double[4];
+        }
+
+        public void parseDataArray() {
+            if (data != null && data.length >= 10) {
+                robotYaw = data[0];
+                roll = data[1];
+                pitch = data[2];
+                yaw = data[3];
+                gyroZ = data[4];
+                gyroX = data[5];
+                gyroY = data[6];
+                accelZ = data[7];
+                accelX = data[8];
+                accelY = data[9];
+            }
         }
     }
 
@@ -1889,6 +1916,9 @@ public class LimelightHelpers {
                 results.error = "lljson error: empty json";
             } else {
                 results = mapper.readValue(jsonString, LimelightResults.class);
+                if (results.imuResults != null) {
+                    results.imuResults.parseDataArray();
+                }
             }
         } catch (JsonProcessingException e) {
             results.error = "lljson error: " + e.getMessage();
