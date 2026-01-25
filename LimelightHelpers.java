@@ -917,7 +917,7 @@ public class LimelightHelpers {
         
         if (poseArray.length == 0) {
             // Handle the case where no data is available
-            return null; // or some default PoseEstimate
+            return new PoseEstimate();
         }
     
         var pose = toPose2D(poseArray);
@@ -1160,18 +1160,6 @@ public class LimelightHelpers {
     }
 
 
-    public static URL getLimelightURLString(String tableName, String request) {
-        String urlString = "http://" + sanitizeName(tableName) + ".local:5807/" + request;
-        URL url;
-        try {
-            url = new URL(urlString);
-            return url;
-        } catch (MalformedURLException e) {
-            System.err.println("bad LL URL");
-        }
-        return null;
-    }
-    /////
     /////
 
     /**
