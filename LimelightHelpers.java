@@ -510,6 +510,12 @@ public class LimelightHelpers {
         @JsonProperty("ta")
         public double ta;
 
+        @JsonProperty("stdev_mt1")
+        public double[] stdev_mt1;
+
+        @JsonProperty("stdev_mt2")
+        public double[] stdev_mt2;
+        
         @JsonProperty("botpose")
         public double[] botpose;
 
@@ -577,6 +583,16 @@ public class LimelightHelpers {
     
         public Pose2d getBotPose2d_wpiBlue() {
             return toPose2D(botpose_wpiblue);
+        }
+
+        public Matrix<N3, N1> getMegatag1Stdev() {
+            assert stdev_mt1.length >= 6 : "stdev_mt1 array must have at least 6 elements";
+            return VecBuilder.fill(stdev_mt1[0], stdev_mt1[1], Units.degreesToRadians(stdev_mt1[5]));
+        }
+
+        public Matrix<N3, N1> getMegatag2Stdev() {
+            assert stdev_mt2.length >= 6 : "stdev_mt2 array must have at least 6 elements";
+            return VecBuilder.fill(stdev_mt2[0], stdev_mt2[1], Units.degreesToRadians(stdev_mt2[5]));
         }
 
         @JsonProperty("Retro")
